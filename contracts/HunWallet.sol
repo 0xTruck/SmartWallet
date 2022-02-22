@@ -34,6 +34,10 @@ contract HunWallet is RolesOwnable{
     Transaction[] private transactions;
     uint private transactionCount;
 
+    uint private emergencyOwnerTX;
+    uint private emergencyManagerTX;
+    uint private emergencyCompounderTX;
+
     modifier onlyDuringTransaction() {
         require( transactioning ,"Not allowed");
         _;
@@ -90,10 +94,14 @@ contract HunWallet is RolesOwnable{
     }
     /// @notice Executes the transaction with ID trID
     function execute( uint trID ) external onlyRoles(){
+        require( !transactions[ trID ].executed, "Already executed");
+        require( block.timestamp > transactions[ trID ].timeOfSubmission + TRANSACTION_DELAY, "Transaction not ready");
+        _execute( trID );
+    }
+
+    function _execute( uint trID ) internal {
         require( trID < transactionCount, "Transaction does not exist");
         Transaction memory transaction = transactions[ trID ];
-        require( !transaction.executed, "Already executed");
-        require( block.timestamp > transaction.timeOfSubmission + TRANSACTION_DELAY, "Transaction not ready");
 
         if(transaction.trType == TransactionType.DEPOSIT){
             transactioning = true;
@@ -108,7 +116,22 @@ contract HunWallet is RolesOwnable{
         transactions[ trID ].executed = true;
     }
 
-    function unApprove( address token, address to ) external onlyRoles(){
-        require( IERC20( token ).approve(to, 0) );
+    function approveEmergencyExecute( uint trID ) external onlyRoles() {
+        require( trID != 0 );
+        if(msg.sender == compounder){
+            emergencyCompounderTX = trID;
+        }
+        else if(msg.sender == manager){
+            emergencyManagerTX = trID;
+        }
+        else{
+            emergencyOwnerTX = trID;
+        }
+        if( emergencyCompounderTX == emergencyManagerTX && emergencyOwnerTX == trID && emergencyCompounderTX == trID) {
+            _execute( trID );
+            emergencyCompounderTX = 0;
+            emergencyManagerTX = 0;
+            emergencyOwnerTX = 0;
+        }
     }
 }
